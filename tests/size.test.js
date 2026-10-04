@@ -10,7 +10,9 @@ const baseline = require('../hooks/scripts/baseline');
 
 const LUA = findLua();
 const PYTHON = findPython();
-const needsLua = LUA ? {} : { skip: 'no Lua 5.1: set CLAUDE_LUA_EXE, or WOW_ELUNE_DIR to an unzipped Elune' };
+// With WOW_REQUIRE_LUA (CI), a missing Lua fails the run instead of skipping it: a silent skip
+// would leave check_size.lua untested with a green result.
+const needsLua = LUA || process.env.WOW_REQUIRE_LUA ? {} : { skip: 'no Lua 5.1: set CLAUDE_LUA_EXE, or WOW_ELUNE_DIR to an unzipped Elune' };
 const needsPython = PYTHON ? {} : { skip: 'no Python 3 on the PATH' };
 
 const LIMITS = { enabled: true, maxFileLines: 20, maxFunctionLines: 5, include: ['*.js', '*.lua', '*.py', '*.txt'] };
@@ -82,6 +84,7 @@ test('a baseline written by 1.x (French keys) still silences the recorded debt',
 });
 
 test('a Lua function over the limit is measured by check_size.lua', needsLua, () => {
+  assert.ok(LUA, 'WOW_REQUIRE_LUA is set but no Lua 5.1 was found (CLAUDE_LUA_EXE, WOW_ELUNE_DIR)');
   const root = project({ fileSizeGuard: LIMITS });
   const file = write(root, 'Addon/Core.lua', BIG_LUA);
   const r = hook('file-size-guard.js', edit(file, root), root, Object.assign({ CLAUDE_LUA_EXE: LUA.exe }, LUA.env));

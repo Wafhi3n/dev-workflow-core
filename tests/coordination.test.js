@@ -8,8 +8,12 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { write, hook } = require('./helpers');
 
+// GIT_AUTHOR_* and GIT_COMMITTER_* override each clone's user.name (CI sets them to "ci"), and the
+// hook's message names the author: they're left out so Bob's commit is really Bob's.
+const GIT_ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_(AUTHOR|COMMITTER)_/.test(k)));
+
 function git(cwd, ...args) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: GIT_ENV });
 }
 
 // Alice's clone, behind origin by one commit of Bob's on src/shared.lua.
