@@ -1,0 +1,33 @@
+{
+  "_comment": "Copy to <project>/.claude/dev-workflow.json and adapt, or run /setup-project, which does it for you. Patterns are wildcards (* and ?), not regular expressions; '/' and '\\' are the same, so this file works as is on Windows, Linux and macOS.",
+
+  "fileSizeGuard": {
+    "enabled": true,
+    "maxFileLines": 500,
+    "maxFunctionLines": 60,
+    "include": ["*.lua", "*.cs", "*.ts", "*.py"],
+    "exclude": ["*/Libs/*", "*/node_modules/*", "*/obj/*", "*/bin/*", "*/dist/*", "*/__pycache__/*"],
+    "luaExe": ""
+  },
+
+  "readonlyPathGuard": {
+    "enabled": false,
+    "blocked": ["*/vendor/*", "*/third_party/*"],
+    "message": "This folder is read-only: edit the source, then regenerate."
+  },
+
+  "testGuard": {
+    "_comment": "Runs when Claude is about to hand back; a failure sends it back to fix the regression. Each check reruns only when a file it watches changed since its last green run.",
+    "enabled": false,
+    "checks": [
+      { "name": "tests", "command": "npm test", "runOnlyIfChanged": ["*.js", "*.ts"] }
+    ]
+  },
+
+  "coordinationGuard": {
+    "_comment": "Worth it as soon as two people (or two machines) push to the repository. Blocks ONCE per file and per session when the file changed on origin and wasn't pulled ('git fetch' at most once every fetchMinutes). Put in exclude what scripts rewrite all the time (logs, generated changelogs).",
+    "enabled": false,
+    "fetchMinutes": 10,
+    "exclude": ["*/CHANGELOG.md", "*/.claude/*"]
+  }
+}

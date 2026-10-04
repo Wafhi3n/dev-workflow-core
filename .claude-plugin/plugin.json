@@ -1,0 +1,22 @@
+{
+  "name": "dev-workflow-core",
+  "version": "2.0.0",
+  "description": "Workflow guardrails for any project, whatever the language, driven by a .claude/dev-workflow.json in the project (without it, the hooks do nothing). Hooks: the project's checks run when Claude is about to hand back and a failure stops it from concluding (known failures can be recorded so only new ones block); a size guard that measures files and functions after every write, Bash and PowerShell writes included (exact per-function analysis for Lua and Python, a brace heuristic for C#, Java, JS and TS, a baseline so only what gets worse speaks up); a block on writes to read-only paths; a one-time warning before editing a file someone else changed on origin. /setup-project writes the config, with limits measured on the repository. Skills: feature-spec (one spec per feature, written before the code, acceptance criteria that name who observes them) and human-verification (getting a person to check what can't be seen from the terminal: test sheet, known-good control, dated log). Agents: spec-updater (what a diff made wrong in the docs) and docs-consistency-auditor (contradictions inside a documentation corpus).",
+  "author": {
+    "name": "Wafhien"
+  },
+  "homepage": "https://github.com/Wafhi3n/wow-addon-workspace",
+  "repository": "https://github.com/Wafhi3n/wow-addon-workspace",
+  "license": "MIT",
+  "keywords": [
+    "hooks",
+    "workflow",
+    "guardrails",
+    "testing",
+    "code-size",
+    "verification",
+    "human-in-the-loop",
+    "documentation",
+    "spec-driven"
+  ]
+}
