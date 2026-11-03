@@ -144,7 +144,9 @@ Say:
 
 - what was written and why these limits (quote the measured numbers);
 - how to turn the plugin on for the project: `enabledPlugins` in the project's
-  `.claude/settings.json`, with `"dev-workflow-core@wow-addon-workspace": true`;
+  `.claude/settings.json`, with `"dev-workflow-core@dev-workflow-core": true`
+  (`"dev-workflow-core@wow-addon-workspace": true` if it was installed from that marketplace; one
+  of the two, never both, or every hook runs twice);
 - that **the hooks manifest is only read when a session starts**: restart for the hooks to take
   effect;
 - **if `node` isn't on the `PATH`**: the hooks are written in JavaScript and won't run. Check it

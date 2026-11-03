@@ -10,6 +10,19 @@ my WoW addons and on C# and JavaScript projects too: nothing in here knows about
 So installing the plugin has no effect until a project turns it on. You can leave it enabled
 everywhere and wire it only where it helps.
 
+## Install
+
+In Claude Code:
+
+```
+/plugin marketplace add Wafhi3n/dev-workflow-core
+/plugin install dev-workflow-core@dev-workflow-core
+```
+
+Already installed as `dev-workflow-core@wow-addon-workspace`? Nothing to do: that marketplace
+fetches the plugin from this repository, and updates arrive the same way. Keep one of the two, not
+both, or every hook runs twice.
+
 ## What's in it
 
 | Part | When it's active |
@@ -394,3 +407,18 @@ A UTF-8 byte order mark at the start of the JSON makes `JSON.parse` fail, and th
 you: a Windows editor saving `.claude/dev-workflow.json`, and PowerShell, which puts one in front of
 what it pipes into a native program's stdin. Both are handled in `config.js` (`stripBom`), when the
 file **and** stdin are read.
+
+## Developing
+
+```
+npm test
+```
+
+The test that runs `check_size.lua` needs a Lua 5.1: set `CLAUDE_LUA_EXE` to it, or
+`WOW_ELUNE_DIR` to an unzipped [Elune](https://github.com/Meorawr/elune/releases) (a Lua 5.1 with
+builds for Windows, macOS and Linux, which is what CI uses). Without either, that test is skipped
+and says so. CI sets `WOW_REQUIRE_LUA`, which turns the skip into a failure.
+
+## License
+
+MIT

@@ -1,0 +1,53 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      # A Lua 5.1 for the check_size.lua tests on every OS: Elune ships one build per system,
+      # unzipped as is. WOW_ELUNE_DIR is the name the test helpers look for.
+      - name: Get Elune
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$RUNNER_OS" in
+            Linux)   asset=elune-3.1-linux-x86_64.zip ;;
+            macOS)   asset=elune-3.1-darwin-x86_64.zip ;;
+            Windows) asset=elune-3.1-windows-amd64.zip ;;
+          esac
+          gh release download v3.1 -R Meorawr/elune -p "$asset" -D "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/elune"
+          if command -v unzip >/dev/null; then unzip -q "$RUNNER_TEMP/$asset" -d "$RUNNER_TEMP/elune"; else 7z x -y -o"$RUNNER_TEMP/elune" "$RUNNER_TEMP/$asset" >/dev/null; fi
+          chmod +x "$RUNNER_TEMP"/elune/*/bin/* 2>/dev/null || true
+          ls "$RUNNER_TEMP"/elune/*/bin
+          # Informational. On macOS, Elune needs DYLD_LIBRARY_PATH, which the test helpers set themselves.
+          for f in "$RUNNER_TEMP"/elune/*/bin/lua.exe "$RUNNER_TEMP"/elune/*/bin/lua5.1; do
+            if [ -f "$f" ]; then DYLD_LIBRARY_PATH="$(dirname "$f")/../lib" "$f" -v || echo "$f doesn't run on this runner"; fi
+          done
+          echo "WOW_ELUNE_DIR=$RUNNER_TEMP/elune" >> "$GITHUB_ENV"
+
+      - name: Tests
+        env:
+          WOW_REQUIRE_LUA: '1'
+          GIT_AUTHOR_NAME: ci
+          GIT_AUTHOR_EMAIL: ci@example.com
+          GIT_COMMITTER_NAME: ci
+          GIT_COMMITTER_EMAIL: ci@example.com
+        run: npm test

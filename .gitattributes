@@ -1,0 +1,3 @@
+# Claude Code reads plugins from the working copy. A skill or command whose frontmatter comes out
+# with CRLF endings can fail to parse and then loads without its metadata, silently.
+* text=auto eol=lf
