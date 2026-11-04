@@ -12,6 +12,9 @@ who already installed it.
   difference: the checks at the end of a turn run once the turn has ended, and a failure comes back
   as a new message instead of holding the answer. See "In OpenCode" in the README. Tested against
   a simulated plugin context, not yet inside OpenCode.
+- An opt-in trace for the OpenCode plugin (`.claude/dev-workflow-trace.jsonl`), and a smoke test
+  for a real OpenCode (`opencode/smoke/`): a model follows `AGENT.md`, and `verify.js` judges the
+  run from the trace and the files, not from what the model reports.
 - Nothing changes for Claude Code.
 
 ## 2.0.1 - 2026-11-03

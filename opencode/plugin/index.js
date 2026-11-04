@@ -17,9 +17,10 @@
 // unchanged, and doing without it spares the plugin any dependency to install.
 // OpenCode 1.x isn't supported: its plugins use another API.
 
-import { runHook } from './run-hook.js';
+import { runHook, PLUGIN_ROOT } from './run-hook.js';
 import { targetsOf, payloadsFor, appendText } from './translate.js';
 import { watchStops } from './stop.js';
+import { trace } from './trace.js';
 
 // The session's directory, the one its tools resolve relative paths against. ctx.location is the
 // plugin's own location, which isn't every session's: it's only the fallback.
@@ -42,27 +43,39 @@ async function refusals(run, script, payloads, projectDir) {
   return out;
 }
 
+// What the trace keeps of a call: the files or command the guards were given, or, for a tool they
+// don't cover, the names of its arguments (enough to see a write the plugin didn't translate).
+function seen(event, target) {
+  const base = { session: event.sessionID, tool: event.tool };
+  if (!target) return Object.assign(base, { covered: false, args: Object.keys(event.input || {}) });
+  return Object.assign(base, { covered: true, files: target.files, command: target.command });
+}
+
 async function beforeTool(ctx, run, event) {
   const dir = await directoryOf(ctx, event.sessionID);
   const target = targetsOf(event.tool, event.input, dir);
-  if (!target) return;
-  const payloads = payloadsFor(target, event.sessionID, 'PreToolUse');
-
-  // Read-only first: a write it refuses must not use up the coordination guard's one warning.
-  let messages = await refusals(run, 'readonly-path-guard.js', payloads, dir);
-  if (messages.length === 0 && target.kind === 'file') {
-    messages = await refusals(run, 'coordination-guard.js', payloads, dir);
+  let messages = [];
+  if (target) {
+    const payloads = payloadsFor(target, event.sessionID, 'PreToolUse');
+    // Read-only first: a write it refuses must not use up the coordination guard's one warning.
+    messages = await refusals(run, 'readonly-path-guard.js', payloads, dir);
+    if (messages.length === 0 && target.kind === 'file') {
+      messages = await refusals(run, 'coordination-guard.js', payloads, dir);
+    }
   }
+  trace(dir, Object.assign({ event: 'before' }, seen(event, target), { refused: messages }));
   if (messages.length) throw new Error(messages.join('\n'));
 }
 
 async function afterTool(ctx, run, event) {
-  if (event.status !== 'completed') return;
   const dir = await directoryOf(ctx, event.sessionID);
-  const target = targetsOf(event.tool, event.input, dir);
-  if (!target) return;
-  const messages = await refusals(run, 'file-size-guard.js', payloadsFor(target, event.sessionID, 'PostToolUse'), dir);
-  if (messages.length) event.result = appendText(event.result, messages.join('\n'));
+  const target = event.status === 'completed' ? targetsOf(event.tool, event.input, dir) : null;
+  let messages = [];
+  if (target) {
+    messages = await refusals(run, 'file-size-guard.js', payloadsFor(target, event.sessionID, 'PostToolUse'), dir);
+    if (messages.length) event.result = appendText(event.result, messages.join('\n'));
+  }
+  trace(dir, Object.assign({ event: 'after', status: event.status }, seen(event, target), { appended: messages }));
 }
 
 export default {
@@ -70,6 +83,8 @@ export default {
   async setup(ctx) {
     const options = (ctx && ctx.options) || {};
     const run = (script, payload, opts) => runHook(script, payload, Object.assign({ node: options.node }, opts));
+    const own = ctx.location && ctx.location.directory;
+    trace(own, { event: 'loaded', directory: own, root: PLUGIN_ROOT });
 
     await ctx.tool.hook('execute.before', (event) => beforeTool(ctx, run, event));
     // execute.after may not fail in OpenCode: an error there would be a defect, never a message.
@@ -81,7 +96,7 @@ export default {
       session: ctx.session,
       run,
       directoryOf: (sessionID, info) => directoryOf(ctx, sessionID, info),
-      ownDirectory: ctx.location && ctx.location.directory,
+      ownDirectory: own,
     });
   },
 };

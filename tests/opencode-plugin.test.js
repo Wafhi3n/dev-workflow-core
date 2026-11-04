@@ -5,79 +5,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
-const { pathToFileURL } = require('url');
 const { write, project, lines, behindOrigin } = require('./helpers');
-
-const PLUGIN = path.join(__dirname, '..', 'opencode', 'plugin');
-const load = (name) => import(pathToFileURL(path.join(PLUGIN, name)).href);
-
-// The server's event stream: every subscriber gets every event, until its signal aborts. What
-// ctx.event.subscribe returns is one subscriber's async iterable.
-function channel() {
-  const subscribers = new Set();
-  return {
-    push(item) { subscribers.forEach((s) => s.push(item)); },
-    iterate(signal) {
-      const items = [];
-      let wake = null;
-      let closed = false;
-      const notify = () => { if (wake) { wake(); wake = null; } };
-      const sub = { push(item) { items.push(item); notify(); } };
-      subscribers.add(sub);
-      if (signal) signal.addEventListener('abort', () => { closed = true; subscribers.delete(sub); notify(); });
-      return (async function* () {
-        for (;;) {
-          if (items.length) { yield items.shift(); continue; }
-          if (closed) return;
-          await new Promise((resolve) => { wake = resolve; });
-        }
-      })();
-    },
-  };
-}
-
-// The slice of the plugin context the plugin uses. `node` is the test's own Node: inside OpenCode
-// the plugin looks for `node` on the PATH.
-// opts: parentID (every session is a subagent), sessionDir (where the sessions live, else dir),
-// events (a channel shared with another instance, as the server's one stream is).
-function fakeContext(dir, opts) {
-  const o = opts || {};
-  const hooks = {};
-  const prompts = [];
-  const events = o.events || channel();
-  const ctx = {
-    location: { directory: dir },
-    options: { node: process.execPath },
-    tool: { hook: async (name, callback) => { hooks[name] = callback; return { dispose: async () => {} }; } },
-    session: {
-      get: async ({ sessionID }) => ({ id: sessionID, parentID: o.parentID, location: { directory: o.sessionDir || dir } }),
-      prompt: async (input) => { prompts.push(input); return {}; },
-    },
-    event: { subscribe: (options) => events.iterate(options && options.signal) },
-  };
-  return { ctx, hooks, prompts, events };
-}
-
-async function started(dir, opts) {
-  const plugin = (await load('index.js')).default;
-  const fake = fakeContext(dir, opts);
-  fake.cleanup = await plugin.setup(fake.ctx);
-  return fake;
-}
-
-const call = (tool, input, extra) => Object.assign({ tool, input, sessionID: 'ses_1', agent: 'build', messageID: 'msg_1', id: 'call_1' }, extra);
-
-async function waitFor(check, ms) {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
-    if (check()) return true;
-    await new Promise((r) => setTimeout(r, 25));
-  }
-  return check();
-}
-
-// A check command that prints `text`, then exits with `code` (no backslash: see stop.test.js).
-const check = (text, code) => JSON.stringify(process.execPath) + ' -e "console.log(\'' + text + '\');process.exit(' + code + ')"';
+const { load, channel, fakeContext, started, call, waitFor, check } = require('./opencode-harness');
 
 // --- translate.js ----------------------------------------------------------------------------
 
@@ -244,5 +173,42 @@ test('a retried turn that is interrupted doesn\'t exempt the next one', async ()
   events.push({ type: 'session.execution.interrupted', data: { sessionID: 'ses_1', reason: 'user' } });
   events.push({ type: 'session.execution.succeeded', data: { sessionID: 'ses_1' } });
   assert.ok(await waitFor(() => prompts.length === 2, 15000), 'checked again, not waved through');
+  cleanup();
+});
+
+// --- trace -------------------------------------------------------------------------------------
+
+const fs = require('fs');
+const traceOf = (root) => path.join(root, '.claude', 'dev-workflow-trace.jsonl');
+const traced = (root) => fs.readFileSync(traceOf(root), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+test('the trace is written only once its file exists, and keeps every call, covered or not', async () => {
+  const root = project(READONLY);
+  const { hooks, cleanup } = await started(root);
+  await hooks['execute.before'](call('write', { path: 'src/a.lua', content: 'x' }));
+  assert.equal(fs.existsSync(traceOf(root)), false, 'off by default');
+
+  write(root, '.claude/dev-workflow-trace.jsonl', '');
+  await hooks['execute.before'](call('read', { filePath: 'src/a.lua' }));
+  await assert.rejects(hooks['execute.before'](call('write', { path: 'Deployed/a.lua', content: 'x' })), /BLOCKED/);
+  const [read, refused] = traced(root);
+  assert.deepEqual([read.event, read.tool, read.covered, read.args], ['before', 'read', false, ['filePath']]);
+  assert.equal(refused.covered, true);
+  assert.match(refused.refused[0], /BLOCKED: '.*a\.lua' is read-only/);
+  cleanup();
+
+  const again = await started(root);
+  assert.equal(traced(root).pop().event, 'loaded');
+  again.cleanup();
+});
+
+test('a trace that can\'t be written never refuses a call', async () => {
+  const root = project(READONLY);
+  fs.mkdirSync(traceOf(root), { recursive: true });
+  const { hooks, cleanup } = await started(root);
+  await hooks['execute.before'](call('write', { path: 'src/a.lua', content: 'x' }));
+  const done = call('write', { path: 'src/a.lua' }, { status: 'completed', result: { content: 'Wrote it' } });
+  await hooks['execute.after'](done);
+  assert.equal(done.result.content, 'Wrote it');
   cleanup();
 });

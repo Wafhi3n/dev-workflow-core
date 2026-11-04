@@ -17,6 +17,7 @@
 // the checks and send its own copy of the failure.
 
 import path from 'node:path';
+import { trace } from './trace.js';
 
 const ENDED = 'session.execution.succeeded';
 const CANCELLED = ['session.execution.failed', 'session.execution.interrupted'];
@@ -53,7 +54,9 @@ export async function handleStop(sessionID, state, deps) {
     const dir = await deps.directoryOf(sessionID, info);
     const payload = { session_id: sessionID, hook_event_name: 'Stop', stop_hook_active: active, cwd: dir };
     const r = await deps.run('stop-test-guard.js', payload, { projectDir: dir });
-    if (r.code !== 2 || active) return 'passed';
+    const retry = r.code === 2 && !active;
+    trace(dir, { event: 'stop-check', session: sessionID, active, code: r.code, reprompt: retry });
+    if (!retry) return 'passed';
     state.retried.add(sessionID);
     await deps.session.prompt({ sessionID, text: STOP_PREFIX + r.err });
     return 'reprompted';
@@ -71,6 +74,7 @@ export function watchStops(ctx, deps) {
     for await (const event of ctx.event.subscribe({ types, signal: controller.signal })) {
       const id = event && event.data && event.data.sessionID;
       if (!id) continue;
+      trace(deps.ownDirectory, { event: event.type, session: id });
       if (event.type !== ENDED) { state.retried.delete(id); continue; }
       handleStop(id, state, deps).catch((e) => console.warn('[dev-workflow-core] Stop guard: ' + (e && e.message)));
     }

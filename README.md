@@ -449,9 +449,14 @@ What's different from Claude Code:
   isn't Node. Otherwise set `DEV_WORKFLOW_NODE` to its path.
 - OpenCode 1.x isn't supported: its plugins use another API.
 
+**Why didn't a guard fire?** Create an empty `.claude/dev-workflow-trace.jsonl` in the project:
+the plugin then logs there, one JSON line per event, whether it loaded, every tool name OpenCode
+sent, and what each script answered. Delete the file to turn it off.
+
 **Status:** written from OpenCode 2.2.5's source and docs on 2026-11-04, and tested against a
 simulated plugin context that runs the real scripts (`tests/opencode-*.test.js`). It hasn't run
-inside OpenCode yet.
+inside OpenCode yet. [`opencode/smoke/`](opencode/smoke/README.md) is the test that will: a model
+follows a script of tool calls, and the plugin's trace gives the verdict.
 
 ## Developing
 
