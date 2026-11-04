@@ -23,6 +23,8 @@ Already installed as `dev-workflow-core@wow-addon-workspace`? Nothing to do: tha
 fetches the plugin from this repository, and updates arrive the same way. Keep one of the two, not
 both, or every hook runs twice.
 
+Using OpenCode 2.x? See [In OpenCode](#in-opencode).
+
 ## What's in it
 
 | Part | When it's active |
@@ -407,6 +409,49 @@ A UTF-8 byte order mark at the start of the JSON makes `JSON.parse` fail, and th
 you: a Windows editor saving `.claude/dev-workflow.json`, and PowerShell, which puts one in front of
 what it pipes into a native program's stdin. Both are handled in `config.js` (`stripBom`), when the
 file **and** stdin are read.
+
+## In OpenCode
+
+The same guards, skills, agents and command run in [OpenCode](https://opencode.ai) 2.x, from a
+clone of this repository:
+
+```
+git clone https://github.com/Wafhi3n/dev-workflow-core
+node dev-workflow-core/opencode/install.js
+```
+
+That writes into `~/.config/opencode`, or into `<dir>/.opencode` with `--project <dir>`:
+
+| File | What it is |
+|---|---|
+| `plugins/dev-workflow-core.js` | a pointer to `opencode/plugin/` in the clone, so the hooks follow `git pull` |
+| `agents/*.md`, `commands/*.md`, `skills/*/SKILL.md` | copies converted from this repository: run the installer again after each update |
+
+Every file it writes carries a marker, and it never overwrites or removes a file without one.
+`--uninstall` removes what it wrote, `--dry-run` shows what it would do.
+
+A project is turned on by the same `.claude/dev-workflow.json`, so a project set up for Claude Code
+is set up for OpenCode too, and `/setup-project` writes it from OpenCode as well.
+
+What's different from Claude Code:
+
+- **The checks at the end of a turn can't hold the answer back.** OpenCode has no event that keeps
+  a turn from ending. The plugin runs the checks once the turn has ended
+  (`session.execution.succeeded`), and when one fails it sends the failure back as a new message in
+  the same session. The model gets one retry, like Claude Code's `stop_hook_active`. Subagent
+  sessions are skipped, as in Claude Code.
+- **The size guard's message comes at the end of the tool's result**, where the model reads it.
+- **A refusal** (read-only path, file changed on origin) fails the tool call with the script's
+  message, as in Claude Code.
+- The tools covered are `edit`, `write`, `patch` (every file the patch names) and `shell`. Nobody
+  has checked yet whether OpenCode runs plugin hooks on the tools called from Code Mode (`execute`).
+- **`node` has to be on the `PATH`** of the OpenCode process: inside OpenCode, the running binary
+  isn't Node. Otherwise set `DEV_WORKFLOW_NODE` to its path.
+- OpenCode 1.x isn't supported: its plugins use another API.
+
+**Status:** written from OpenCode 2.2.5's source and docs on 2026-11-04, and tested against a
+simulated plugin context that runs the real scripts (`tests/opencode-*.test.js`). It hasn't run
+inside OpenCode yet.
 
 ## Developing
 

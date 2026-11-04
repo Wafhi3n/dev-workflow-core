@@ -4,6 +4,16 @@ The `version` in `.claude-plugin/plugin.json` goes up with every release: Claude
 installed plugin by its version, so an update that keeps the same number may never reach people
 who already installed it.
 
+## 2.1.0 - 2026-11-04
+
+- **OpenCode 2.x.** `node opencode/install.js` installs the guards, skills, agents and command into
+  OpenCode from a clone of this repository. The hooks are the same scripts, run by a plugin
+  (`opencode/plugin/`) that translates OpenCode's tool calls into the payloads they read. One
+  difference: the checks at the end of a turn run once the turn has ended, and a failure comes back
+  as a new message instead of holding the answer. See "In OpenCode" in the README. Tested against
+  a simulated plugin context, not yet inside OpenCode.
+- Nothing changes for Claude Code.
+
 ## 2.0.1 - 2026-11-03
 
 - The plugin has its own repository and marketplace, `Wafhi3n/dev-workflow-core`. It used to live

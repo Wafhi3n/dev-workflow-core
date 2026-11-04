@@ -1,7 +1,7 @@
 {
   "name": "dev-workflow-core",
   "private": true,
-  "description": "Workflow guardrails for Claude Code, on any project and in any language.",
+  "description": "Workflow guardrails for Claude Code (and OpenCode 2.x), on any project and in any language.",
   "license": "MIT",
   "engines": { "node": ">=20" },
   "scripts": {

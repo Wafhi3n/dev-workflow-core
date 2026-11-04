@@ -1,10 +1,11 @@
 'use strict';
 // Shared by the hook tests: throwaway projects, a hook run the way Claude Code runs it (JSON payload
-// on stdin), and the interpreters the size guard can use, found the way CI provides them.
+// on stdin), the interpreters the size guard can use, found the way CI provides them, and a git
+// clone that is behind its origin.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawnSync, execFileSync } = require('child_process');
 
 const SCRIPTS = path.join(__dirname, '..', 'hooks', 'scripts');
 
@@ -81,4 +82,39 @@ function lines(n, prefix) {
   return Array.from({ length: n }, (_, i) => (prefix || '  ') + 'x = ' + i).join('\n');
 }
 
-module.exports = { SCRIPTS, write, project, hook, findLua, findPython, lines };
+// GIT_AUTHOR_* and GIT_COMMITTER_* override each clone's user.name (CI sets them to "ci"), and the
+// coordination guard's message names the author: they're left out so Bob's commit is really Bob's.
+const GIT_ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_(AUTHOR|COMMITTER)_/.test(k)));
+
+function git(cwd, ...args) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: GIT_ENV });
+}
+
+// Alice's clone, behind origin by one commit of Bob's on src/shared.lua. Returns Alice's root.
+function behindOrigin() {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'dwc-coord-'));
+  const origin = path.join(base, 'origin.git');
+  git(base, 'init', '-q', '--bare', origin);
+  git(origin, 'symbolic-ref', 'HEAD', 'refs/heads/main');
+  const alice = path.join(base, 'alice');
+  const bob = path.join(base, 'bob');
+  git(base, 'clone', '-q', origin, alice);
+  git(alice, 'checkout', '-q', '-b', 'main');
+  git(alice, 'config', 'user.name', 'Alice');
+  git(alice, 'config', 'user.email', 'alice@example.com');
+  write(alice, 'src/shared.lua', 'x = 1\n');
+  write(alice, 'src/other.lua', 'y = 1\n');
+  write(alice, '.claude/dev-workflow.json', JSON.stringify({ coordinationGuard: { enabled: true, fetchMinutes: 10, exclude: ['*/.claude/*'] } }));
+  git(alice, 'add', '-A');
+  git(alice, 'commit', '-q', '-m', 'init');
+  git(alice, 'push', '-q', '-u', 'origin', 'main');
+  git(base, 'clone', '-q', origin, bob);
+  git(bob, 'config', 'user.name', 'Bob');
+  git(bob, 'config', 'user.email', 'bob@example.com');
+  write(bob, 'src/shared.lua', 'x = 2\n');
+  git(bob, 'commit', '-q', '-am', 'bob changes shared');
+  git(bob, 'push', '-q');
+  return alice;
+}
+
+module.exports = { SCRIPTS, write, project, hook, findLua, findPython, lines, behindOrigin };

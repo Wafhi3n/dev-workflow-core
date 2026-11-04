@@ -1,0 +1,10 @@
+{
+  "name": "dev-workflow-core-opencode",
+  "private": true,
+  "description": "dev-workflow-core's guards for OpenCode 2.x. Runs the hook scripts of the clone it lives in: install it by path (node opencode/install.js), not as a package.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  }
+}
