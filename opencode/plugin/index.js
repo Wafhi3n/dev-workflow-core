@@ -81,6 +81,7 @@ export default {
       session: ctx.session,
       run,
       directoryOf: (sessionID, info) => directoryOf(ctx, sessionID, info),
+      ownDirectory: ctx.location && ctx.location.directory,
     });
   },
 };

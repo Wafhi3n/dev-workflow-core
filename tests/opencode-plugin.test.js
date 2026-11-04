@@ -11,38 +11,46 @@ const { write, project, lines, behindOrigin } = require('./helpers');
 const PLUGIN = path.join(__dirname, '..', 'opencode', 'plugin');
 const load = (name) => import(pathToFileURL(path.join(PLUGIN, name)).href);
 
-// An async queue that ends when its signal aborts: what ctx.event.subscribe returns.
+// The server's event stream: every subscriber gets every event, until its signal aborts. What
+// ctx.event.subscribe returns is one subscriber's async iterable.
 function channel() {
-  const items = [];
-  let wake = null;
-  let closed = false;
-  const notify = () => { if (wake) { wake(); wake = null; } };
+  const subscribers = new Set();
   return {
-    push(item) { items.push(item); notify(); },
-    async *iterate(signal) {
-      if (signal) signal.addEventListener('abort', () => { closed = true; notify(); });
-      for (;;) {
-        if (items.length) { yield items.shift(); continue; }
-        if (closed) return;
-        await new Promise((resolve) => { wake = resolve; });
-      }
+    push(item) { subscribers.forEach((s) => s.push(item)); },
+    iterate(signal) {
+      const items = [];
+      let wake = null;
+      let closed = false;
+      const notify = () => { if (wake) { wake(); wake = null; } };
+      const sub = { push(item) { items.push(item); notify(); } };
+      subscribers.add(sub);
+      if (signal) signal.addEventListener('abort', () => { closed = true; subscribers.delete(sub); notify(); });
+      return (async function* () {
+        for (;;) {
+          if (items.length) { yield items.shift(); continue; }
+          if (closed) return;
+          await new Promise((resolve) => { wake = resolve; });
+        }
+      })();
     },
   };
 }
 
 // The slice of the plugin context the plugin uses. `node` is the test's own Node: inside OpenCode
 // the plugin looks for `node` on the PATH.
+// opts: parentID (every session is a subagent), sessionDir (where the sessions live, else dir),
+// events (a channel shared with another instance, as the server's one stream is).
 function fakeContext(dir, opts) {
   const o = opts || {};
   const hooks = {};
   const prompts = [];
-  const events = channel();
+  const events = o.events || channel();
   const ctx = {
     location: { directory: dir },
     options: { node: process.execPath },
     tool: { hook: async (name, callback) => { hooks[name] = callback; return { dispose: async () => {} }; } },
     session: {
-      get: async ({ sessionID }) => ({ id: sessionID, parentID: o.parentID, location: { directory: dir } }),
+      get: async ({ sessionID }) => ({ id: sessionID, parentID: o.parentID, location: { directory: o.sessionDir || dir } }),
       prompt: async (input) => { prompts.push(input); return {}; },
     },
     event: { subscribe: (options) => events.iterate(options && options.signal) },
@@ -210,5 +218,31 @@ test('the plugin listens for the end of a turn and stops listening on cleanup', 
   assert.ok(await waitFor(() => prompts.length === 1, 15000), 'the failure came back as a prompt');
   assert.equal(prompts[0].sessionID, 'ses_9');
   assert.match(prompts[0].text, /FAIL wired/);
+  cleanup();
+});
+
+test('with two projects loaded, only the session\'s own location sends the failure back', async () => {
+  const mine = project({ testGuard: { enabled: true, command: check('FAIL here', 1) } });
+  const other = project({ testGuard: { enabled: true, command: check('FAIL there', 1) } });
+  const events = channel();
+  const a = await started(mine, { events, sessionDir: mine });
+  const b = await started(other, { events, sessionDir: mine });
+  events.push({ type: 'session.execution.succeeded', data: { sessionID: 'ses_1' } });
+  assert.ok(await waitFor(() => a.prompts.length === 1, 15000));
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(b.prompts.length, 0, 'the other location stays quiet');
+  assert.equal(a.prompts.length, 1);
+  a.cleanup();
+  b.cleanup();
+});
+
+test('a retried turn that is interrupted doesn\'t exempt the next one', async () => {
+  const root = project({ testGuard: { enabled: true, command: check('FAIL again', 1) } });
+  const { events, prompts, cleanup } = await started(root);
+  events.push({ type: 'session.execution.succeeded', data: { sessionID: 'ses_1' } });
+  assert.ok(await waitFor(() => prompts.length === 1, 15000));
+  events.push({ type: 'session.execution.interrupted', data: { sessionID: 'ses_1', reason: 'user' } });
+  events.push({ type: 'session.execution.succeeded', data: { sessionID: 'ses_1' } });
+  assert.ok(await waitFor(() => prompts.length === 2, 15000), 'checked again, not waved through');
   cleanup();
 });
