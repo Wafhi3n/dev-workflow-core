@@ -28,7 +28,8 @@ later on the `PATH`.
    Wait for `PART 1 DONE`.
 5. Send: `Now do Part 2 of SMOKE-TEST.md.` The model answers `PART 2 DONE`. A message starting
    with `[dev-workflow-core]` should then arrive by itself, and the model answers `RECORDED`. Wait
-   a few seconds more: nothing else should arrive.
+   a few seconds more: nothing else should arrive. Don't send anything else in that session before
+   step 6 (`RED` is still there, so a new message would be checked again, and rightly fail).
 6. Run:
 
    ```

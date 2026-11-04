@@ -50,8 +50,11 @@ function size(root, trace) {
   return result(false, 'size: the call was seen, but nothing was appended to its result');
 }
 
-function stops(trace) {
-  const checks = trace.filter((e) => e.event === 'stop-check');
+// The ends of turn of the test's session only (another tab may have run in the same folder), and of
+// part 2 only up to the end of the retried turn: RED is still there afterwards, so anything sent in
+// that session later is checked again, and rightly fails.
+function stops(trace, session) {
+  const checks = trace.filter((e) => e.event === 'stop-check' && (!session || e.session === session));
   const first = checks.findIndex((e) => e.reprompt);
   const before = first < 0 ? checks : checks.slice(0, first);
   const out = [];
@@ -59,13 +62,21 @@ function stops(trace) {
   out.push(green ? result(true, 'end of part 1: checked, passed, nothing sent')
     : result(false, 'end of part 1: ' + (checks.length ? 'no passing check before RED (codes: ' + before.map((e) => e.code).join(', ') + ')'
       : 'no end-of-turn check at all (' + trace.filter((e) => /^session\.execution/.test(e.event)).length + ' end-of-turn events seen)')));
-  const reprompts = checks.filter((e) => e.reprompt).length;
+  const later = first < 0 ? [] : checks.slice(first + 1);
+  const closed = later.findIndex((e) => e.active);
+  const reprompts = first < 0 ? 0 : 1 + (closed < 0 ? later : later.slice(0, closed)).filter((e) => e.reprompt).length;
   out.push(reprompts === 1 ? result(true, 'end of part 2: RED failed the check, and the failure was sent back once')
     : result(false, 'end of part 2: the failure was sent back ' + reprompts + ' times (expected 1)'));
-  const retried = first >= 0 && checks.slice(first + 1).some((e) => e.active);
-  out.push(retried ? result(true, 'retried turn: it ended without a second message (anti-loop)')
+  out.push(closed >= 0 ? result(true, 'retried turn: it ended without a second message (anti-loop)')
     : result(false, 'retried turn: no check of the turn started by the automatic message (it never ended, or verify ran too early)'));
   return out;
+}
+
+// The session that ran the test: the one that made the control call, else the first one seen.
+function testSession(trace) {
+  const control = trace.find((e) => e.event === 'before' && e.covered && names(e, 'Open/a.txt'));
+  const any = trace.find((e) => e.event === 'before');
+  return (control || any || {}).session;
 }
 
 function configKept(root) {
@@ -81,14 +92,17 @@ function verify(dir) {
   if (trace === null) return { ok: false, checks: [result(false, 'no trace file: run setup.js on this folder first')], info: [] };
   const loaded = trace.find((e) => e.event === 'loaded');
   if (!loaded) return { ok: false, checks: [result(false, 'the plugin never loaded in ' + root + ': is plugins/dev-workflow-core.js installed, and did OpenCode start in this folder?')], info: [] };
+  const session = testSession(trace);
   const checks = [result(true, 'plugin loaded, from ' + loaded.root), control(root, trace),
     refusal(root, trace, 'Deployed/a.txt', (e) => names(e, 'Deployed/a.txt'), 'write into Deployed'),
     refusal(root, trace, 'Deployed/b.txt', (e) => e.command !== undefined && norm(e.command).includes('deployed/b.txt'), 'shell into Deployed'),
-    size(root, trace)].concat(stops(trace), [configKept(root)]);
+    size(root, trace)].concat(stops(trace, session), [configKept(root)]);
   const tools = new Map();
   trace.filter((e) => e.event === 'before').forEach((e) => tools.set(e.tool, e.covered ? 'covered' : 'not covered, args: ' + e.args.join(', ')));
+  const others = new Set(trace.filter((e) => e.event === 'stop-check' && e.session !== session).map((e) => e.session));
   const info = ['tools seen: ' + (Array.from(tools, ([t, c]) => t + ' (' + c + ')').join('; ') || 'none'),
-    'the agent\'s report: ' + (exists(root, REPORT) ? path.join(root, REPORT) : 'not written')];
+    'the agent\'s report: ' + (exists(root, REPORT) ? path.join(root, REPORT) : 'not written'),
+    'session judged: ' + (session || 'none') + (others.size ? '; other sessions left out: ' + Array.from(others).join(', ') : '')];
   return { ok: checks.every((c) => c.ok), checks, info };
 }
 

@@ -68,6 +68,17 @@ test('verify passes a good run, judged from the trace and the files', async () =
   assert.match(r.info[0], /read \(not covered, args: filePath\)/);
 });
 
+test('another session, or a message sent after the retried turn, doesn\'t change the verdict', async () => {
+  const root = setup(fresh());
+  await playRun(root);
+  const line = (e) => fs.appendFileSync(path.join(root, TRACE), JSON.stringify(Object.assign({ event: 'stop-check' }, e)) + '\n');
+  line({ session: 'ses_2', active: false, code: 2, reprompt: true });
+  line({ session: 'ses_1', active: false, code: 2, reprompt: true });
+  const r = verify(root);
+  assert.ok(r.ok, r.checks.filter((c) => !c.ok).map((c) => c.text).join('\n'));
+  assert.match(r.info[2], /session judged: ses_1; other sessions left out: ses_2/);
+});
+
 test('a file that is missing without a refusal in the trace is not a pass', async () => {
   const root = setup(fresh());
   await playRun(root);
